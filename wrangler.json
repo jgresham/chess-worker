@@ -10,7 +10,7 @@
   "migrations": [
     {
       "new_classes": [
-        "MyDurableObject"
+        "ChessGame"
       ],
       "tag": "v1"
     }
@@ -18,8 +18,8 @@
   "durable_objects": {
     "bindings": [
       {
-        "class_name": "MyDurableObject",
-        "name": "MY_DURABLE_OBJECT"
+        "class_name": "ChessGame",
+        "name": "CHESS_GAME"
       }
     ]
   },
