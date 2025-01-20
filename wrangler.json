@@ -10,9 +10,16 @@
   "migrations": [
     {
       "new_classes": [
-        "ChessGame"
+        "MyDurableObject"
       ],
       "tag": "v1"
+    },
+		{
+      "new_classes": [
+        "ChessGame"
+      ],
+			"deleted_classes": ["MyDurableObject"],
+      "tag": "v2"
     }
   ],
   "durable_objects": {

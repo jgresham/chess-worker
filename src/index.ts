@@ -1,6 +1,7 @@
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { Chess } from "chess.js";
-
+import { verifyMessage } from "@wagmi/core";
+import { config } from "./wagmiconfig";
 export type WsMessage = {
 	type: string,
 	data: any
@@ -21,7 +22,7 @@ export type WsMessage = {
 
 /** A Durable Object's behavior is defined in an exported Javascript class */
 export class ChessGame extends DurableObject<Env> {
-	game: Chess;
+	game: Chess | null = null;
 
 	/**
 	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
@@ -31,9 +32,33 @@ export class ChessGame extends DurableObject<Env> {
 	 * @param env - The interface to reference bindings declared in wrangler.json
 	 */
 	constructor(ctx: DurableObjectState, env: Env) {
+		console.log("ChessGame constructor");
 		super(ctx, env);
-		this.game = new Chess();
-		// todo: deserialize game state from env?
+		this.initGame();
+	}
+
+	async initGame() {
+		const gameFenStr: string = (await this.ctx.storage.get('gameFen') || '');
+		const gamePgnStr: string = (await this.ctx.storage.get('gamePgn') || '');
+		console.log("initGame: ", gameFenStr, gamePgnStr);
+		if (gameFenStr && gamePgnStr) {
+			const loadedGame = new Chess();
+			// load fen and pgn (avoid having to do recursive deserialization)
+			// loadedGame.load(gameFenStr);
+			loadedGame.loadPgn(gamePgnStr);
+			this.game = loadedGame;
+		} else {
+			this.game = new Chess();
+		}
+	}
+
+	async saveGame() {
+		if(!this.game) {
+			console.error("game not initialized");
+			return;
+		}
+		await this.ctx.storage.put('gameFen', this.game.fen());
+		await this.ctx.storage.put('gamePgn', this.game.pgn());
 	}
 
 	/**
@@ -44,7 +69,27 @@ export class ChessGame extends DurableObject<Env> {
 	 * @returns The greeting to be sent back to the Worker
 	 */
 	async getGameFEN(): Promise<string> {
-		return this.game.fen();
+		return this.game?.fen() || '';
+	}
+
+	getGamePgn(): string {
+		if(!this.game) {
+			console.error("game not initialized");
+			return '';
+		}
+		return this.game.pgn();
+	}
+
+	getGame() {
+		return this.game;
+	}
+
+	resetGame() {
+		console.log("resetGame");
+		this.game = new Chess();
+		this.saveGame();
+		this.broadcast({type: "game", data: this.getGamePgn()});
+
 	}
 
 	broadcast(message: WsMessage, self?: string) {
@@ -60,16 +105,39 @@ export class ChessGame extends DurableObject<Env> {
 		const parsedMsg: WsMessage = JSON.parse(message);
 
 		switch (parsedMsg.type) {
+			case "get-game":
+				console.log("get-game:\n", this.game?.ascii());
+				ws.send(JSON.stringify({type: "game", data: this.getGamePgn()}));
+				// this.broadcast();
+				break;
+		  case "reset-game":
+			this.resetGame();
+			break;
 		  case "move":
+			if(!this.game) {
+				console.error("game not initialized");
+				return;
+			}
 			  const msgData: {
 				  from: string,
 				  to: string,
 				  promotion: string, // always promote to a queen for example simplicity
+					address: `0x${string}`,
+					message: string,
+					signature: `0x${string}`,
 				  } = parsedMsg.data
 
+					// validate move signature
+					const verified = await verifyMessage(config, {
+						address: msgData.address,
+						message: msgData.message,
+						signature: msgData.signature,
+					})
+					console.log("user move signature verified:", verified);
+
 			  // validate move
-			  const move = this.game.move(msgData);
-				console.log("move:", move);
+			  	const move = this.game.move(msgData);
+				console.log("move:", JSON.stringify(move));
 
 				// illegal move
 				// todo: handle illegal move
@@ -77,6 +145,8 @@ export class ChessGame extends DurableObject<Env> {
 					console.error("illegal move");
 					return;
 				}
+
+				await this.saveGame();
 			// ws.serializeAttachment(session);
 			// this.broadcast(parsedMsg, session.id);
 				this.broadcast(parsedMsg);
@@ -144,7 +214,9 @@ export default {
 		  });
 		}
 		const id = env.CHESS_GAME.idFromName("globalRoom");
+		console.log("id", id);
 		const stub = env.CHESS_GAME.get(id);
+		console.log("stub", stub);
 		return stub.fetch(request);
 	  }
 	  return new Response(null, {
