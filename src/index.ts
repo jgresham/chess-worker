@@ -2,6 +2,7 @@ import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { Chess } from "chess.js";
 import { verifyMessage } from "@wagmi/core";
 import { config } from "./wagmiconfig";
+import { generateId } from "./generateId";
 export type WsMessage = {
 	type: string,
 	data: any
@@ -52,8 +53,22 @@ export class ChessGame extends DurableObject<Env> {
 		}
 	}
 
+	async setInitialPlayerData(gameData: {
+		player1Address: `0x${string}`,
+		player2Address: `0x${string}`,
+		gameId: string,
+	}) {
+		await this.ctx.storage.put('player1Address', gameData.player1Address);
+		await this.ctx.storage.put('player2Address', gameData.player2Address);
+		await this.ctx.storage.put('gameId', gameData.gameId);
+	}
+
+	async getUserFacingGameId() {
+		return await this.ctx.storage.get('gameId');
+	}
+
 	async saveGame() {
-		if(!this.game) {
+		if (!this.game) {
 			console.error("game not initialized");
 			return;
 		}
@@ -73,7 +88,7 @@ export class ChessGame extends DurableObject<Env> {
 	}
 
 	getGamePgn(): string {
-		if(!this.game) {
+		if (!this.game) {
 			console.error("game not initialized");
 			return '';
 		}
@@ -88,17 +103,17 @@ export class ChessGame extends DurableObject<Env> {
 		console.log("resetGame");
 		this.game = new Chess();
 		this.saveGame();
-		this.broadcast({type: "game", data: this.getGamePgn()});
+		this.broadcast({ type: "game", data: this.getGamePgn() });
 
 	}
 
 	broadcast(message: WsMessage, self?: string) {
 		this.ctx.getWebSockets().forEach((ws) => {
-		//   const { id } = ws.deserializeAttachment();
-		//   if (id !== self) ws.send(JSON.stringify(message));
-		  ws.send(JSON.stringify(message));
+			//   const { id } = ws.deserializeAttachment();
+			//   if (id !== self) ws.send(JSON.stringify(message));
+			ws.send(JSON.stringify(message));
 		});
-	  }
+	}
 
 	async webSocketMessage(ws: WebSocket, message: string) {
 		if (typeof message !== "string") return;
@@ -107,36 +122,36 @@ export class ChessGame extends DurableObject<Env> {
 		switch (parsedMsg.type) {
 			case "get-game":
 				console.log("get-game:\n", this.game?.ascii());
-				ws.send(JSON.stringify({type: "game", data: this.getGamePgn()}));
+				ws.send(JSON.stringify({ type: "game", data: this.getGamePgn() }));
 				// this.broadcast();
 				break;
-		  case "reset-game":
-			this.resetGame();
-			break;
-		  case "move":
-			if(!this.game) {
-				console.error("game not initialized");
-				return;
-			}
-			  const msgData: {
-				  from: string,
-				  to: string,
-				  promotion: string, // always promote to a queen for example simplicity
+			case "reset-game":
+				this.resetGame();
+				break;
+			case "move":
+				if (!this.game) {
+					console.error("game not initialized");
+					return;
+				}
+				const msgData: {
+					from: string,
+					to: string,
+					promotion: string, // always promote to a queen for example simplicity
 					address: `0x${string}`,
 					message: string,
 					signature: `0x${string}`,
-				  } = parsedMsg.data
+				} = parsedMsg.data
 
-					// validate move signature
-					const verified = await verifyMessage(config, {
-						address: msgData.address,
-						message: msgData.message,
-						signature: msgData.signature,
-					})
-					console.log("user move signature verified:", verified);
+				// validate move signature
+				const verified = await verifyMessage(config, {
+					address: msgData.address,
+					message: msgData.message,
+					signature: msgData.signature,
+				})
+				console.log("user move signature verified:", verified);
 
-			  // validate move
-			  	const move = this.game.move(msgData);
+				// validate move
+				const move = this.game.move(msgData);
 				console.log("move:", JSON.stringify(move));
 
 				// illegal move
@@ -147,16 +162,16 @@ export class ChessGame extends DurableObject<Env> {
 				}
 
 				await this.saveGame();
-			// ws.serializeAttachment(session);
-			// this.broadcast(parsedMsg, session.id);
+				// ws.serializeAttachment(session);
+				// this.broadcast(parsedMsg, session.id);
 				this.broadcast(parsedMsg);
-			break;
-		  default:
-			break;
+				break;
+			default:
+				break;
 		}
-	  }
+	}
 
-	  async webSocketClose(ws: WebSocket, code: number) {
+	async webSocketClose(ws: WebSocket, code: number) {
 		// If the client closes the connection, the runtime will invoke the webSocketClose() handler.
 		ws.close(code, "Chess Durable Object is closing WebSocket");
 	}
@@ -178,67 +193,161 @@ export class ChessGame extends DurableObject<Env> {
 		// this.broadcast({ type: "join", id }, id);
 
 		return new Response(null, {
-		  status: 101,
-		  webSocket: client,
+			status: 101,
+			webSocket: client,
 		});
-	  }
+	}
 }
 
 export class SessionsRPC extends WorkerEntrypoint<Env> {
 	async getGameFEN() {
-	  const id = this.env.CHESS_GAME.idFromName("globalRoom");
-	  const stub = this.env.CHESS_GAME.get(id);
-	  console.log("stub", stub);
-	  const gameFEN = await stub.getGameFEN();
-	  console.log("stub.getGameFEN", gameFEN);
-	  // Invoking Durable Object RPC method. Same `wrangler dev` session.
-	  return gameFEN;
+		const id = this.env.CHESS_GAME.idFromName("globalRoom");
+		const stub = this.env.CHESS_GAME.get(id);
+		console.log("stub", stub);
+		const gameFEN = await stub.getGameFEN();
+		console.log("stub.getGameFEN", gameFEN);
+		// Invoking Durable Object RPC method. Same `wrangler dev` session.
+		return gameFEN;
 	}
-  }
+}
+
+async function handleOptions(request: Request<unknown, CfProperties<unknown>>) {
+	if (
+		request.headers.get("Origin") !== null &&
+		request.headers.get("Access-Control-Request-Method") !== null &&
+		request.headers.get("Access-Control-Request-Headers") !== null
+	) {
+		// Handle CORS preflight requests.
+		return new Response(null, {
+			headers: {
+				...corsHeaders,
+				"Access-Control-Allow-Headers": request.headers.get(
+					"Access-Control-Request-Headers",
+				) || '*',
+			},
+		});
+	} else {
+		// Handle standard OPTIONS request.
+		return new Response(null, {
+			headers: {
+				Allow: "GET, HEAD, POST, OPTIONS",
+			},
+		});
+	}
+}
+
+const corsHeaders = {
+	"Access-Control-Allow-Origin": "*",
+	"Access-Control-Allow-Methods": "GET,HEAD,POST,OPTIONS",
+	"Access-Control-Max-Age": "86400",
+};
 
 export default {
-// 	/**
-// 	 * This is the standard fetch handler for a Cloudflare Worker
-// 	 *
-// 	 * @param request - The request submitted to the Worker from the client
-// 	 * @param env - The interface to reference bindings declared in wrangler.json
-// 	 * @param ctx - The execution context of the Worker
-// 	 * @returns The response to be sent back to the client
-// 	 */
+	// 	/**
+	// 	 * This is the standard fetch handler for a Cloudflare Worker
+	// 	 *
+	// 	 * @param request - The request submitted to the Worker from the client
+	// 	 * @param env - The interface to reference bindings declared in wrangler.json
+	// 	 * @param ctx - The execution context of the Worker
+	// 	 * @returns The response to be sent back to the client
+	// 	 */
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-	if (request.url.match("/ws")) {
-		const upgradeHeader = request.headers.get("Upgrade");
-		if (!upgradeHeader || upgradeHeader !== "websocket") {
-		  return new Response("Chess Durable Object expected Upgrade: websocket", {
-			status: 426,
-		  });
+		if (request.method === "OPTIONS") {
+			// Handle CORS preflight requests
+			return handleOptions(request);
 		}
-		const id = env.CHESS_GAME.idFromName("globalRoom");
-		console.log("id", id);
-		const stub = env.CHESS_GAME.get(id);
-		console.log("stub", stub);
-		return stub.fetch(request);
-	  }
-	  return new Response(null, {
-		status: 400,
-		statusText: "Bad Request",
-		headers: {
-		  "Content-Type": "text/plain",
-		},
-	  });
+		if (request.url.match("/ws")) {
+			const upgradeHeader = request.headers.get("Upgrade");
+			if (!upgradeHeader || upgradeHeader !== "websocket") {
+				return new Response("Chess Durable Object expected Upgrade: websocket", {
+					status: 426,
+				});
+			}
+			const gameId = new URL(request.url).searchParams.get("gameId");
+			if (!gameId) {
+				return new Response(null, {
+					status: 400,
+					statusText: `Game gameId ${gameId} not found`,
+					headers: {
+						"Content-Type": "text/plain",
+					},
+				});
+			}
+			const id = env.CHESS_GAME.idFromName(gameId);
+			console.log("id", id);
+			const stub = env.CHESS_GAME.get(id);
+			console.log("stub", stub);
+			// if game does not have player data or gameId, return 404
+			const userFacingGameId = await stub.getUserFacingGameId();
+			if (!userFacingGameId) {
+				return new Response(null, {
+					status: 404,
+					statusText: `Game ${gameId} not found`,
+					headers: {
+						"Content-Type": "text/plain",
+					},
+				});
+			}
+			return stub.fetch(request);
+		} else if (request.url.match("/game")) {
+			if (request.method == 'POST') {
+				console.log("POST /game")
+				const body: {
+					player1Address: `0x${string}`,
+					player2Address: `0x${string}`,
+				} = await request.json();
+				const player1Address = body.player1Address;
+				const player2Address = body.player2Address;
+				if (!player1Address || !player2Address) {
+					return new Response(null, {
+						status: 400,
+						statusText: `Player addresses not found. Player1: ${player1Address}, Player2: ${player2Address}`,
+						headers: {
+							"Content-Type": "text/plain",
+						},
+					});
+				}
+				const gameId = generateId();
+				// create game data object
+				const gameData = {
+					player1Address,
+					player2Address,
+					gameId,
+				}
+				console.log("gameData", JSON.stringify(gameData));
+				const id = env.CHESS_GAME.idFromName(gameId);
+				console.log("id", id);
+				const stub = env.CHESS_GAME.get(id);
+				console.log("stub", stub);
+				await stub.setInitialPlayerData(gameData);
+				// Set CORS headers
+				const response = new Response(JSON.stringify({ gameId }));
+				response.headers.set("Access-Control-Allow-Origin", "*")
+				response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				// response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") || '*');
+				return response;
+			}
+		}
+		return new Response(null, {
+			status: 400,
+			statusText: "Bad Request",
+			headers: {
+				"Content-Type": "text/plain",
+			},
+		});
 
-// 		// We will create a `DurableObjectId` using the pathname from the Worker request
-// 		// This id refers to a unique instance of our 'MyDurableObject' class above
-// 		let id: DurableObjectId = env.CHESS_GAME.idFromName(new URL(request.url).pathname);
+		// 		// We will create a `DurableObjectId` using the pathname from the Worker request
+		// 		// This id refers to a unique instance of our 'MyDurableObject' class above
+		// 		let id: DurableObjectId = env.CHESS_GAME.idFromName(new URL(request.url).pathname);
 
-// 		// This stub creates a communication channel with the Durable Object instance
-// 		// The Durable Object constructor will be invoked upon the first call for a given id
-// 		let stub = env.CHESS_GAME.get(id);
+		// 		// This stub creates a communication channel with the Durable Object instance
+		// 		// The Durable Object constructor will be invoked upon the first call for a given id
+		// 		let stub = env.CHESS_GAME.get(id);
 
-// 		// We call the `sayHello()` RPC method on the stub to invoke the method on the remote
-// 		// Durable Object instance
-// 		let greeting = await stub.getGameFEN();
+		// 		// We call the `sayHello()` RPC method on the stub to invoke the method on the remote
+		// 		// Durable Object instance
+		// 		let greeting = await stub.getGameFEN();
 
-// 		return new Response(greeting);
+		// 		return new Response(greeting);
 	},
 } satisfies ExportedHandler<Env>;
