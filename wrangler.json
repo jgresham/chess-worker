@@ -30,6 +30,12 @@
       }
     ]
   },
+	"kv_namespaces": [
+    {
+      "binding": "KV_CHESS_GAMES_BY_USER",
+      "id": "ebe20f1ab11c48bea8c63c20c017dc09"
+    }
+  ],
   "observability": {
     "enabled": true
   }

@@ -24,6 +24,9 @@ export type WsMessage = {
 /** A Durable Object's behavior is defined in an exported Javascript class */
 export class ChessGame extends DurableObject<Env> {
 	game: Chess | null = null;
+	player1Address: `0x${string}` | null = null;
+	player2Address: `0x${string}` | null = null;
+	userFacingGameId: string | null = null;
 
 	/**
 	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
@@ -41,7 +44,7 @@ export class ChessGame extends DurableObject<Env> {
 	async initGame() {
 		const gameFenStr: string = (await this.ctx.storage.get('gameFen') || '');
 		const gamePgnStr: string = (await this.ctx.storage.get('gamePgn') || '');
-		console.log("initGame: ", gameFenStr, gamePgnStr);
+		console.log("initGame()");
 		if (gameFenStr && gamePgnStr) {
 			const loadedGame = new Chess();
 			// load fen and pgn (avoid having to do recursive deserialization)
@@ -50,6 +53,15 @@ export class ChessGame extends DurableObject<Env> {
 			this.game = loadedGame;
 		} else {
 			this.game = new Chess();
+		}
+
+		const player1Address: string = (await this.ctx.storage.get('player1Address')) || '';
+		const player2Address: string = (await this.ctx.storage.get('player2Address')) || '';
+		const userFacingGameId: string = (await this.ctx.storage.get('gameId')) || '';
+		if (player1Address && player2Address && userFacingGameId) {
+			this.player1Address = player1Address as `0x${string}`;
+			this.player2Address = player2Address as `0x${string}`;
+			this.userFacingGameId = userFacingGameId;
 		}
 	}
 
@@ -60,11 +72,35 @@ export class ChessGame extends DurableObject<Env> {
 	}) {
 		await this.ctx.storage.put('player1Address', gameData.player1Address);
 		await this.ctx.storage.put('player2Address', gameData.player2Address);
+		this.player1Address = gameData.player1Address as `0x${string}`;
+		this.player2Address = gameData.player2Address as `0x${string}`;
 		await this.ctx.storage.put('gameId', gameData.gameId);
+		this.userFacingGameId = gameData.gameId;
 	}
 
 	async getUserFacingGameId() {
 		return await this.ctx.storage.get('gameId');
+	}
+
+	async getUserFacingGameData(): Promise<{
+		player1Address: `0x${string}` | undefined,
+		player2Address: `0x${string}` | undefined,
+		gameId: string | undefined,
+		liveViewers: number | undefined,
+	}> {
+		const player1Address = await this.ctx.storage.get('player1Address') as `0x${string}` | undefined;
+		const player2Address = await this.ctx.storage.get('player2Address') as `0x${string}` | undefined;
+		const gameId = await this.ctx.storage.get('gameId') as string | undefined;
+		const liveViewers = await this.ctx.storage.get('liveViewers') as number | undefined;
+		if (!player1Address || !player2Address || !gameId) {
+			console.error("userFacingGameData not found for gameId: ", this.userFacingGameId);
+		}
+		return {
+			player1Address,
+			player2Address,
+			gameId,
+			liveViewers: this.ctx.getWebSockets().length
+		}
 	}
 
 	async saveGame() {
@@ -103,8 +139,7 @@ export class ChessGame extends DurableObject<Env> {
 		console.log("resetGame");
 		this.game = new Chess();
 		this.saveGame();
-		this.broadcast({ type: "game", data: this.getGamePgn() });
-
+		this.broadcast({ type: "game", data: { pgn: this.getGamePgn() } });
 	}
 
 	broadcast(message: WsMessage, self?: string) {
@@ -121,8 +156,20 @@ export class ChessGame extends DurableObject<Env> {
 
 		switch (parsedMsg.type) {
 			case "get-game":
-				console.log("get-game:\n", this.game?.ascii());
-				ws.send(JSON.stringify({ type: "game", data: this.getGamePgn() }));
+				const player1Address = await this.ctx.storage.get('player1Address');
+				const player2Address = await this.ctx.storage.get('player2Address');
+				// const liveViewers = await this.ctx.storage.get('liveViewers');
+				const liveViewers = this.ctx.getWebSockets().length;
+				console.log("getGame() liveViewers: ", liveViewers);
+				ws.send(JSON.stringify(
+					{
+						type: "game", data: {
+							pgn: this.getGamePgn(),
+							player1Address,
+							player2Address,
+							liveViewers
+						}
+					}));
 				// this.broadcast();
 				break;
 			case "reset-game":
@@ -148,16 +195,32 @@ export class ChessGame extends DurableObject<Env> {
 					message: msgData.message,
 					signature: msgData.signature,
 				})
+				if (!verified) {
+					console.error("move signature verification failed");
+					return;
+				}
 				console.log("user move signature verified:", verified);
 
 				// validate move
-				const move = this.game.move(msgData);
-				console.log("move:", JSON.stringify(move));
-
-				// illegal move
-				// todo: handle illegal move
-				if (move === null) {
-					console.error("illegal move");
+				try {
+					const move = this.game.move({
+						from: msgData.from, to: msgData.to, promotion: msgData.promotion
+					});
+					console.log("move received:", move);
+					// check if the move is made by the correct player
+					if (move.color === 'w' && msgData.address !== this.player1Address) {
+						console.error("move made by wrong player");
+						// undoes the latest move
+						this.game.undo();
+						return;
+					}
+					if (move.color === 'b' && msgData.address !== this.player2Address) {
+						console.error("move made by wrong player");
+						return;
+					}
+				} catch (error) {
+					// illegal move
+					console.error("error invalid move:", error);
 					return;
 				}
 
@@ -165,6 +228,17 @@ export class ChessGame extends DurableObject<Env> {
 				// ws.serializeAttachment(session);
 				// this.broadcast(parsedMsg, session.id);
 				this.broadcast(parsedMsg);
+
+				// check if game is over
+				if (this.game.isGameOver()) {
+					this.broadcast({ type: "game-over", data: { pgn: this.getGamePgn() } });
+
+					// todo: save game state to a smart contract
+				}
+				break;
+			case "live-viewers":
+				console.log("live-viewers msg liveViewers: ", this.ctx.getWebSockets().length);
+				ws.send(JSON.stringify({ type: "live-viewers", data: { liveViewers: this.ctx.getWebSockets().length } }));
 				break;
 			default:
 				break;
@@ -181,6 +255,8 @@ export class ChessGame extends DurableObject<Env> {
 		const webSocketPair = new WebSocketPair();
 		const [client, server] = Object.values(webSocketPair);
 		this.ctx.acceptWebSocket(server);
+		// If the client opens the connection, the runtime will invoke the webSocketOpen() handler.
+		console.log("accepting new websocket connection");
 		// const id = url.searchParams.get("id");
 		// if (!id) {
 		//   return new Response("Missing id", { status: 400 });
@@ -242,6 +318,13 @@ const corsHeaders = {
 	"Access-Control-Max-Age": "86400",
 };
 
+const setCors = (response: Response) => {
+	// Set CORS headers
+	response.headers.set("Access-Control-Allow-Origin", "*")
+	response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	return response
+}
+
 export default {
 	// 	/**
 	// 	 * This is the standard fetch handler for a Cloudflare Worker
@@ -252,6 +335,7 @@ export default {
 	// 	 * @returns The response to be sent back to the client
 	// 	 */
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		console.log("request: ", request.url);
 		if (request.method === "OPTIONS") {
 			// Handle CORS preflight requests
 			return handleOptions(request);
@@ -289,7 +373,38 @@ export default {
 				});
 			}
 			return stub.fetch(request);
+		} else if (request.url.match("/user/games")) {
+			console.log("match /user/games")
+			if (request.method == 'GET') {
+				console.log("In GET /user/games")
+				const address = new URL(request.url).searchParams.get("address");
+				console.log("address", address);
+				if (!address) {
+					console.log("GET /user/games: address not found")
+					return new Response(null, {
+						status: 400,
+						statusText: `URL search parameter address is required`,
+						headers: {
+							"Content-Type": "text/plain",
+						},
+					});
+				}
+				const games = await env.KV_CHESS_GAMES_BY_USER.get(address);
+				console.log("games", games);
+				const gameIds = games ? games.split(",") : [];
+				const gameData = await Promise.all(gameIds.map(async (gameId) => {
+					const stub = env.CHESS_GAME.get(env.CHESS_GAME.idFromName(gameId));
+					const userFacingGameData = await stub.getUserFacingGameData();
+					if (!userFacingGameData || !userFacingGameData.gameId || !userFacingGameData.player1Address || !userFacingGameData.player2Address) {
+						console.error("userFacingGameData not found for gameId: ", gameId);
+					}
+					return { ...userFacingGameData };
+				}));
+				console.log("gameData", JSON.stringify(gameData));
+				return setCors(new Response(JSON.stringify({ games: gameData })));
+			}
 		} else if (request.url.match("/game")) {
+			console.log("match /game")
 			if (request.method == 'POST') {
 				console.log("POST /game")
 				const body: {
@@ -320,14 +435,18 @@ export default {
 				const stub = env.CHESS_GAME.get(id);
 				console.log("stub", stub);
 				await stub.setInitialPlayerData(gameData);
-				// Set CORS headers
-				const response = new Response(JSON.stringify({ gameId }));
-				response.headers.set("Access-Control-Allow-Origin", "*")
-				response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				let player1Games = await env.KV_CHESS_GAMES_BY_USER.get(player1Address);
+				let player2Games = await env.KV_CHESS_GAMES_BY_USER.get(player2Address);
+				player1Games = player1Games ? `${player1Games},${gameId}` : gameId;
+				player2Games = player2Games ? `${player2Games},${gameId}` : gameId;
+				await env.KV_CHESS_GAMES_BY_USER.put(player1Address, player1Games);
+				await env.KV_CHESS_GAMES_BY_USER.put(player2Address, player2Games);
+
 				// response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") || '*');
-				return response;
+				return setCors(response);
 			}
 		}
+		console.log("Router handler not found for request: ", request.url);
 		return new Response(null, {
 			status: 400,
 			statusText: "Bad Request",

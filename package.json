@@ -9,9 +9,9 @@
     "cf-typegen": "wrangler types"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250109.0",
+    "@cloudflare/workers-types": "^4.20250121.0",
     "typescript": "^5.5.2",
-    "wrangler": "^3.103.1"
+    "wrangler": "^3.103.2"
   },
   "dependencies": {
     "@wagmi/core": "^2.16.3",
