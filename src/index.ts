@@ -24,9 +24,14 @@ export type WsMessage = {
 /** A Durable Object's behavior is defined in an exported Javascript class */
 export class ChessGame extends DurableObject<Env> {
 	game: Chess | null = null;
+	createdTimestamp: number | null = null;
 	player1Address: `0x${string}` | null = null;
 	player2Address: `0x${string}` | null = null;
 	userFacingGameId: string | null = null;
+	latestPlayer1Signature: `0x${string}` | null = null;
+	latestPlayer1Message: string | null = null;
+	latestPlayer2Signature: `0x${string}` | null = null;
+	latestPlayer2Message: string | null = null;
 
 	/**
 	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
@@ -41,10 +46,12 @@ export class ChessGame extends DurableObject<Env> {
 		this.initGame();
 	}
 
+	// Called multiple times!
+	// loads data from storage into the durable object instance in memory
 	async initGame() {
+		console.log("initGame()");
 		const gameFenStr: string = (await this.ctx.storage.get('gameFen') || '');
 		const gamePgnStr: string = (await this.ctx.storage.get('gamePgn') || '');
-		console.log("initGame()");
 		if (gameFenStr && gamePgnStr) {
 			const loadedGame = new Chess();
 			// load fen and pgn (avoid having to do recursive deserialization)
@@ -70,12 +77,27 @@ export class ChessGame extends DurableObject<Env> {
 		player2Address: `0x${string}`,
 		gameId: string,
 	}) {
+		this.createdTimestamp = Date.now();
+		await this.ctx.storage.put('createdTimestamp', this.createdTimestamp);
 		await this.ctx.storage.put('player1Address', gameData.player1Address);
 		await this.ctx.storage.put('player2Address', gameData.player2Address);
 		this.player1Address = gameData.player1Address as `0x${string}`;
 		this.player2Address = gameData.player2Address as `0x${string}`;
 		await this.ctx.storage.put('gameId', gameData.gameId);
 		this.userFacingGameId = gameData.gameId;
+
+		// also set the pgn headers using this data
+		if (this.game) {
+			console.log("setting PGN headers");
+			this.game.header('White', gameData.player1Address);
+			this.game.header('Black', gameData.player2Address);
+			this.game.header('Event', gameData.gameId);
+			this.game.header('Site', 'Based Chess');
+			this.game.header('Date', new Date().toISOString());
+		} else {
+			console.error("PGN headers not set because this.game not initialized");
+		}
+		await this.saveGame();
 	}
 
 	async getUserFacingGameId() {
@@ -87,19 +109,33 @@ export class ChessGame extends DurableObject<Env> {
 		player2Address: `0x${string}` | undefined,
 		gameId: string | undefined,
 		liveViewers: number | undefined,
+		latestPlayer1Signature: `0x${string}` | undefined,
+		latestPlayer1Message: string | undefined,
+		latestPlayer2Signature: `0x${string}` | undefined,
+		latestPlayer2Message: string | undefined,
+		createdTimestamp: number | undefined,
 	}> {
 		const player1Address = await this.ctx.storage.get('player1Address') as `0x${string}` | undefined;
 		const player2Address = await this.ctx.storage.get('player2Address') as `0x${string}` | undefined;
 		const gameId = await this.ctx.storage.get('gameId') as string | undefined;
-		const liveViewers = await this.ctx.storage.get('liveViewers') as number | undefined;
 		if (!player1Address || !player2Address || !gameId) {
 			console.error("userFacingGameData not found for gameId: ", this.userFacingGameId);
 		}
+		const latestPlayer1Signature = await this.ctx.storage.get('latestPlayer1Signature') as `0x${string}` | undefined;
+		const latestPlayer1Message = await this.ctx.storage.get('latestPlayer1Message') as string | undefined;
+		const latestPlayer2Signature = await this.ctx.storage.get('latestPlayer2Signature') as `0x${string}` | undefined;
+		const latestPlayer2Message = await this.ctx.storage.get('latestPlayer2Message') as string | undefined;
+		const createdTimestamp = await this.ctx.storage.get('createdTimestamp') as number | undefined;
 		return {
 			player1Address,
 			player2Address,
 			gameId,
-			liveViewers: this.ctx.getWebSockets().length
+			liveViewers: this.ctx.getWebSockets().length,
+			latestPlayer1Signature,
+			latestPlayer1Message,
+			latestPlayer2Signature,
+			latestPlayer2Message,
+			createdTimestamp
 		}
 	}
 
@@ -160,6 +196,10 @@ export class ChessGame extends DurableObject<Env> {
 				const player2Address = await this.ctx.storage.get('player2Address');
 				// const liveViewers = await this.ctx.storage.get('liveViewers');
 				const liveViewers = this.ctx.getWebSockets().length;
+				const latestPlayer1Signature = await this.ctx.storage.get('latestPlayer1Signature') as `0x${string}` | undefined;
+				const latestPlayer1Message = await this.ctx.storage.get('latestPlayer1Message') as string | undefined;
+				const latestPlayer2Signature = await this.ctx.storage.get('latestPlayer2Signature') as `0x${string}` | undefined;
+				const latestPlayer2Message = await this.ctx.storage.get('latestPlayer2Message') as string | undefined;
 				console.log("getGame() liveViewers: ", liveViewers);
 				ws.send(JSON.stringify(
 					{
@@ -167,10 +207,13 @@ export class ChessGame extends DurableObject<Env> {
 							pgn: this.getGamePgn(),
 							player1Address,
 							player2Address,
-							liveViewers
+							liveViewers,
+							latestPlayer1Signature,
+							latestPlayer1Message,
+							latestPlayer2Signature,
+							latestPlayer2Message
 						}
 					}));
-				// this.broadcast();
 				break;
 			case "reset-game":
 				this.resetGame();
@@ -186,27 +229,15 @@ export class ChessGame extends DurableObject<Env> {
 					promotion: string, // always promote to a queen for example simplicity
 					address: `0x${string}`,
 					message: string,
-					signature: `0x${string}`,
+					signature: `0x${string}`, // signature of the game pgn after the move is made
 				} = parsedMsg.data
-
-				// validate move signature
-				const verified = await verifyMessage(config, {
-					address: msgData.address,
-					message: msgData.message,
-					signature: msgData.signature,
-				})
-				if (!verified) {
-					console.error("move signature verification failed");
-					return;
-				}
-				console.log("user move signature verified:", verified);
 
 				// validate move
 				try {
 					const move = this.game.move({
 						from: msgData.from, to: msgData.to, promotion: msgData.promotion
 					});
-					console.log("move received:", move);
+					console.log("move received:", JSON.stringify(move));
 					// check if the move is made by the correct player
 					if (move.color === 'w' && msgData.address !== this.player1Address) {
 						console.error("move made by wrong player");
@@ -221,6 +252,35 @@ export class ChessGame extends DurableObject<Env> {
 				} catch (error) {
 					// illegal move
 					console.error("error invalid move:", error);
+					return;
+				}
+
+				// validate move signature
+				console.log("game pgn after move:", JSON.stringify(this.game.pgn()));
+				const verified = await verifyMessage(config, {
+					address: msgData.address,
+					message: this.game.pgn(),
+					signature: msgData.signature,
+				})
+				if (!verified) {
+					console.error("move signature verification failed");
+					return;
+				}
+				console.log("user move signature verified:", verified);
+
+				// todo: save each player's latest signature and message (pgn)
+				if (msgData.address === this.player1Address) {
+					this.latestPlayer1Signature = msgData.signature;
+					this.latestPlayer1Message = this.game.pgn();
+					await this.ctx.storage.put('latestPlayer1Signature', msgData.signature);
+					await this.ctx.storage.put('latestPlayer1Message', this.game.pgn());
+				} else if (msgData.address === this.player2Address) {
+					this.latestPlayer2Signature = msgData.signature;
+					this.latestPlayer2Message = this.game.pgn();
+					await this.ctx.storage.put('latestPlayer2Signature', msgData.signature);
+					await this.ctx.storage.put('latestPlayer2Message', this.game.pgn());
+				} else {
+					console.error("move made by non-player address");
 					return;
 				}
 
@@ -279,7 +339,6 @@ export class SessionsRPC extends WorkerEntrypoint<Env> {
 	async getGameFEN() {
 		const id = this.env.CHESS_GAME.idFromName("globalRoom");
 		const stub = this.env.CHESS_GAME.get(id);
-		console.log("stub", stub);
 		const gameFEN = await stub.getGameFEN();
 		console.log("stub.getGameFEN", gameFEN);
 		// Invoking Durable Object RPC method. Same `wrangler dev` session.
@@ -360,7 +419,6 @@ export default {
 			const id = env.CHESS_GAME.idFromName(gameId);
 			console.log("id", id);
 			const stub = env.CHESS_GAME.get(id);
-			console.log("stub", stub);
 			// if game does not have player data or gameId, return 404
 			const userFacingGameId = await stub.getUserFacingGameId();
 			if (!userFacingGameId) {
@@ -392,7 +450,7 @@ export default {
 				const games = await env.KV_CHESS_GAMES_BY_USER.get(address);
 				console.log("games", games);
 				const gameIds = games ? games.split(",") : [];
-				const gameData = await Promise.all(gameIds.map(async (gameId) => {
+				let gameData = await Promise.all(gameIds.map(async (gameId) => {
 					const stub = env.CHESS_GAME.get(env.CHESS_GAME.idFromName(gameId));
 					const userFacingGameData = await stub.getUserFacingGameData();
 					if (!userFacingGameData || !userFacingGameData.gameId || !userFacingGameData.player1Address || !userFacingGameData.player2Address) {
@@ -400,6 +458,12 @@ export default {
 					}
 					return { ...userFacingGameData };
 				}));
+				// put newest games first (todo: remove as games are stored newest first by default)
+				gameData = gameData.sort((a, b) => {
+					const aCreatedTimestamp = a.createdTimestamp || 0;
+					const bCreatedTimestamp = b.createdTimestamp || 0;
+					return bCreatedTimestamp - aCreatedTimestamp;
+				});
 				console.log("gameData", JSON.stringify(gameData));
 				return setCors(new Response(JSON.stringify({ games: gameData })));
 			}
@@ -433,17 +497,29 @@ export default {
 				const id = env.CHESS_GAME.idFromName(gameId);
 				console.log("id", id);
 				const stub = env.CHESS_GAME.get(id);
-				console.log("stub", stub);
+				// if the gameId is already initialized then this is a random collision error, return 409
+				// gameIds are generated using generateId() which is a random 10 character string
+				const userFacingGameId = await stub.getUserFacingGameId();
+				if (userFacingGameId) {
+					return new Response(null, {
+						status: 409,
+						statusText: `Game ${gameId} already exists. Rare collision error. Try again.`,
+						headers: {
+							"Content-Type": "text/plain",
+						},
+					});
+				}
 				await stub.setInitialPlayerData(gameData);
 				let player1Games = await env.KV_CHESS_GAMES_BY_USER.get(player1Address);
 				let player2Games = await env.KV_CHESS_GAMES_BY_USER.get(player2Address);
-				player1Games = player1Games ? `${player1Games},${gameId}` : gameId;
-				player2Games = player2Games ? `${player2Games},${gameId}` : gameId;
+				// add new games to the beginning of the list
+				player1Games = player1Games ? `${gameId},${player1Games}` : gameId;
+				player2Games = player2Games ? `${gameId},${player2Games}` : gameId;
 				await env.KV_CHESS_GAMES_BY_USER.put(player1Address, player1Games);
 				await env.KV_CHESS_GAMES_BY_USER.put(player2Address, player2Games);
 
 				// response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") || '*');
-				return setCors(response);
+				return setCors(new Response(JSON.stringify({ gameId })));
 			}
 		}
 		console.log("Router handler not found for request: ", request.url);
