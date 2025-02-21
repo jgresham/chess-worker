@@ -3,6 +3,7 @@ import { Chess } from "chess.js";
 import { verifyMessage } from "@wagmi/core";
 import { config } from "./wagmiconfig";
 import { generateId } from "./generateId";
+
 export type WsMessage = {
 	type: string,
 	data: any
@@ -518,9 +519,31 @@ export default {
 				await env.KV_CHESS_GAMES_BY_USER.put(player1Address, player1Games);
 				await env.KV_CHESS_GAMES_BY_USER.put(player2Address, player2Games);
 
+				const result = await env.PROD_D1_GAMES.prepare("INSERT INTO games (DurableObjectId, DisplayGameId, Player1Address, Player2Address) VALUES (?, ?, ?, ?)")
+					.bind(id.toString(), gameId, player1Address, player2Address)
+					.run();
+				console.log("result", JSON.stringify(result));
+
+
 				// response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") || '*');
 				return setCors(new Response(JSON.stringify({ gameId })));
 			}
+		} else if (request.url.match("/image")) {
+			// Define an SVG
+			const gameId = new URL(request.url).searchParams.get("gameId");
+			const object = await env.BUCKET_BASEDCHESS_BOARDS.get(`${gameId}.png`);
+
+			if (object === null) {
+				return new Response("Object Not Found", { status: 404 });
+			}
+
+			const headers = new Headers();
+			object.writeHttpMetadata(headers);
+			headers.set("etag", object.httpEtag);
+
+			return new Response(object.body, {
+				headers,
+			});
 		}
 		console.log("Router handler not found for request: ", request.url);
 		return new Response(null, {

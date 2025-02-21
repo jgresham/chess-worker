@@ -3,4 +3,7 @@
 interface Env {
 	KV_CHESS_GAMES_BY_USER: KVNamespace;
 	CHESS_GAME: DurableObjectNamespace<import("./src/index").ChessGame>;
+	BUCKET_BASEDCHESS_BOARDS: R2Bucket;
+	PROD_D1_GAMES: D1Database;
+	ASSETS: Fetcher;
 }
