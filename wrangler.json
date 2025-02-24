@@ -7,48 +7,88 @@
   "name": "chess-worker",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-09",
-  "migrations": [
-    {
-      "new_classes": [
-        "MyDurableObject"
-      ],
-      "tag": "v1"
+	"env": {
+    "staging": {
+      "vars": {
+        "ENVIRONMENT": "staging"
+      },
+      "durable_objects": {
+				"bindings": [
+					{
+						"class_name": "ChessGame",
+						"name": "CHESS_GAME"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "v2",
+					"new_classes": [
+						"ChessGame"
+					]
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "D1_GAMES",
+					"database_name": "staging-d1-games",
+					"database_id": "e94199e8-b627-4eb0-999b-ec32e301091e"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "KV_CHESS_GAMES_BY_USER",
+					"id": "efd6819d592b4cd1887b9e543a0116c0"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "BUCKET_BASEDCHESS_BOARDS",
+					"bucket_name": "staging-basedchess-boards"
+				}
+			]
     },
-		{
-      "new_classes": [
-        "ChessGame"
-      ],
-			"deleted_classes": ["MyDurableObject"],
-      "tag": "v2"
+    "production": {
+      "vars": {
+        "ENVIRONMENT": "production"
+      },
+      "durable_objects": {
+				"bindings": [
+					{
+						"class_name": "ChessGame",
+						"name": "CHESS_GAME"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "v2",
+					"new_classes": [
+						"ChessGame"
+					]
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "D1_GAMES",
+					"database_name": "prod-d1-games",
+					"database_id": "152c8595-978d-4fb6-8558-c792debd885c"
+				}
+			],
+			"kv_namespaces": [
+				{
+					"binding": "KV_CHESS_GAMES_BY_USER",
+					"id": "ebe20f1ab11c48bea8c63c20c017dc09"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "BUCKET_BASEDCHESS_BOARDS",
+					"bucket_name": "basedchess-boards"
+				}
+			]
     }
-  ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "class_name": "ChessGame",
-        "name": "CHESS_GAME"
-      }
-    ]
   },
-	"d1_databases": [
-		{
-			"binding": "PROD_D1_GAMES",
-			"database_name": "prod-d1-games",
-			"database_id": "152c8595-978d-4fb6-8558-c792debd885c"
-		}
-	],
-	"kv_namespaces": [
-    {
-      "binding": "KV_CHESS_GAMES_BY_USER",
-      "id": "ebe20f1ab11c48bea8c63c20c017dc09"
-    }
-  ],
-	"r2_buckets": [
-    {
-      "binding": "BUCKET_BASEDCHESS_BOARDS",
-      "bucket_name": "basedchess-boards"
-    }
-  ],
   "observability": {
 		"enabled": true,
     "logs": {

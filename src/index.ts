@@ -519,7 +519,7 @@ export default {
 				await env.KV_CHESS_GAMES_BY_USER.put(player1Address, player1Games);
 				await env.KV_CHESS_GAMES_BY_USER.put(player2Address, player2Games);
 
-				const result = await env.PROD_D1_GAMES.prepare("INSERT INTO games (DurableObjectId, DisplayGameId, Player1Address, Player2Address) VALUES (?, ?, ?, ?)")
+				const result = await env.D1_GAMES.prepare("INSERT INTO games (DurableObjectId, DisplayGameId, Player1Address, Player2Address) VALUES (?, ?, ?, ?)")
 					.bind(id.toString(), gameId, player1Address, player2Address)
 					.run();
 				console.log("result", JSON.stringify(result));
@@ -546,13 +546,20 @@ export default {
 			});
 		}
 		console.log("Router handler not found for request: ", request.url);
-		return new Response(null, {
-			status: 400,
-			statusText: "Bad Request",
+		return new Response("sah dude", {
+			status: 200,
+			statusText: "OK",
 			headers: {
 				"Content-Type": "text/plain",
 			},
 		});
+		// return new Response(null, {
+		// 	status: 400,
+		// 	statusText: "Bad Request",
+		// 	headers: {
+		// 		"Content-Type": "text/plain",
+		// 	},
+		// });
 
 		// 		// We will create a `DurableObjectId` using the pathname from the Worker request
 		// 		// This id refers to a unique instance of our 'MyDurableObject' class above
