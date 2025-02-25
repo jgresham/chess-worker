@@ -2,4 +2,6 @@
 
 interface Env {
 	ENVIRONMENT: "staging" | "production";
+	CHAIN_ID: "8453" | "84532";
+	BASE_TRANSPORT_URL: string;
 }

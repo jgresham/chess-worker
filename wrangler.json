@@ -10,7 +10,8 @@
 	"env": {
     "staging": {
       "vars": {
-        "ENVIRONMENT": "staging"
+        "ENVIRONMENT": "staging",
+				"CHAIN_ID": "84532"
       },
       "durable_objects": {
 				"bindings": [
@@ -50,7 +51,8 @@
     },
     "production": {
       "vars": {
-        "ENVIRONMENT": "production"
+        "ENVIRONMENT": "production",
+				"CHAIN_ID": "8453"
       },
       "durable_objects": {
 				"bindings": [

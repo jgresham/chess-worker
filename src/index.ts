@@ -1,8 +1,10 @@
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { Chess } from "chess.js";
-import { verifyMessage } from "@wagmi/core";
+import { verifyMessage, writeContract } from "@wagmi/core";
 import { config } from "./wagmiconfig";
 import { generateId } from "./generateId";
+import { createClients } from "./viemClients";
+import { contracts } from "./contracts";
 
 export type WsMessage = {
 	type: string,
@@ -33,6 +35,7 @@ export class ChessGame extends DurableObject<Env> {
 	latestPlayer1Message: string | null = null;
 	latestPlayer2Signature: `0x${string}` | null = null;
 	latestPlayer2Message: string | null = null;
+	contractGameId: number | null = null;
 
 	/**
 	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
@@ -70,6 +73,7 @@ export class ChessGame extends DurableObject<Env> {
 			this.player1Address = player1Address as `0x${string}`;
 			this.player2Address = player2Address as `0x${string}`;
 			this.userFacingGameId = userFacingGameId;
+			this.contractGameId = await this.ctx.storage.get('contractGameId') as number | null;
 		}
 	}
 
@@ -77,11 +81,13 @@ export class ChessGame extends DurableObject<Env> {
 		player1Address: `0x${string}`,
 		player2Address: `0x${string}`,
 		gameId: string,
+		contractGameId: number
 	}) {
 		this.createdTimestamp = Date.now();
 		await this.ctx.storage.put('createdTimestamp', this.createdTimestamp);
 		await this.ctx.storage.put('player1Address', gameData.player1Address);
 		await this.ctx.storage.put('player2Address', gameData.player2Address);
+		await this.ctx.storage.put('contractGameId', gameData.contractGameId);
 		this.player1Address = gameData.player1Address as `0x${string}`;
 		this.player2Address = gameData.player2Address as `0x${string}`;
 		await this.ctx.storage.put('gameId', gameData.gameId);
@@ -92,7 +98,7 @@ export class ChessGame extends DurableObject<Env> {
 			console.log("setting PGN headers");
 			this.game.header('White', gameData.player1Address);
 			this.game.header('Black', gameData.player2Address);
-			this.game.header('Event', gameData.gameId);
+			this.game.header('Event', `${gameData.contractGameId},${gameData.gameId}`);
 			this.game.header('Site', 'Based Chess');
 			this.game.header('Date', new Date().toISOString());
 		} else {
@@ -115,6 +121,7 @@ export class ChessGame extends DurableObject<Env> {
 		latestPlayer2Signature: `0x${string}` | undefined,
 		latestPlayer2Message: string | undefined,
 		createdTimestamp: number | undefined,
+		contractGameId: number | undefined,
 	}> {
 		const player1Address = await this.ctx.storage.get('player1Address') as `0x${string}` | undefined;
 		const player2Address = await this.ctx.storage.get('player2Address') as `0x${string}` | undefined;
@@ -127,6 +134,7 @@ export class ChessGame extends DurableObject<Env> {
 		const latestPlayer2Signature = await this.ctx.storage.get('latestPlayer2Signature') as `0x${string}` | undefined;
 		const latestPlayer2Message = await this.ctx.storage.get('latestPlayer2Message') as string | undefined;
 		const createdTimestamp = await this.ctx.storage.get('createdTimestamp') as number | undefined;
+		const contractGameId = await this.ctx.storage.get('contractGameId') as number | undefined;
 		return {
 			player1Address,
 			player2Address,
@@ -136,7 +144,8 @@ export class ChessGame extends DurableObject<Env> {
 			latestPlayer1Message,
 			latestPlayer2Signature,
 			latestPlayer2Message,
-			createdTimestamp
+			createdTimestamp,
+			contractGameId
 		}
 	}
 
@@ -201,6 +210,7 @@ export class ChessGame extends DurableObject<Env> {
 				const latestPlayer1Message = await this.ctx.storage.get('latestPlayer1Message') as string | undefined;
 				const latestPlayer2Signature = await this.ctx.storage.get('latestPlayer2Signature') as `0x${string}` | undefined;
 				const latestPlayer2Message = await this.ctx.storage.get('latestPlayer2Message') as string | undefined;
+				const contractGameId = await this.ctx.storage.get('contractGameId') as number | undefined;
 				console.log("getGame() liveViewers: ", liveViewers);
 				ws.send(JSON.stringify(
 					{
@@ -212,7 +222,8 @@ export class ChessGame extends DurableObject<Env> {
 							latestPlayer1Signature,
 							latestPlayer1Message,
 							latestPlayer2Signature,
-							latestPlayer2Message
+							latestPlayer2Message,
+							contractGameId
 						}
 					}));
 				break;
@@ -488,18 +499,12 @@ export default {
 					});
 				}
 				const gameId = generateId();
-				// create game data object
-				const gameData = {
-					player1Address,
-					player2Address,
-					gameId,
-				}
-				console.log("gameData", JSON.stringify(gameData));
+
 				const id = env.CHESS_GAME.idFromName(gameId);
 				console.log("id", id);
 				const stub = env.CHESS_GAME.get(id);
 				// if the gameId is already initialized then this is a random collision error, return 409
-				// gameIds are generated using generateId() which is a random 10 character string
+				// gameIds are generated using generateId() which is a random 6 character string
 				const userFacingGameId = await stub.getUserFacingGameId();
 				if (userFacingGameId) {
 					return new Response(null, {
@@ -510,6 +515,66 @@ export default {
 						},
 					});
 				}
+
+				// Create a new game on the smart contract then save the gameId to the database
+				console.log(`env.CHAIN_ID: ${env.CHAIN_ID}`);
+				console.log(`env.BASE_TRANSPORT_URL: ${env.BASE_TRANSPORT_URL}`);
+				if (!env.WALLET_PRIVATE_KEY) {
+					console.error("WALLET_PRIVATE_KEY not found!");
+				}
+				if (!env.CHAIN_ID) {
+					console.error("CHAIN_ID not found!");
+				} else {
+					console.log("env.CHAIN_ID: ", env.CHAIN_ID);
+				}
+
+				if (!env.BASE_TRANSPORT_URL) {
+					console.error("BASE_TRANSPORT_URL not found!");
+				} else {
+					console.log("env.BASE_TRANSPORT_URL: ", env.BASE_TRANSPORT_URL);
+				}
+
+				const { account, publicClient, walletClient } = createClients(env);
+				if (!env.WALLET_PRIVATE_KEY) {
+					console.error("WALLET_PRIVATE_KEY not found");
+					return new Response(null, {
+						status: 500,
+						statusText: "Internal Server Error",
+					});
+				}
+
+				const { request: createGameRequest } = await publicClient.simulateContract({
+					account,
+					address: contracts.gamesContract[env.CHAIN_ID].address,
+					abi: contracts.gamesContract[env.CHAIN_ID].abi,
+					functionName: 'createGame',
+					args: [player1Address, player2Address],
+				})
+				const txHash = await walletClient.writeContract(createGameRequest)
+				console.log("txHash", txHash);
+
+				const transaction = await publicClient.waitForTransactionReceipt(
+					{ hash: txHash }
+				)
+				console.log("transaction status", transaction.status);
+				console.log("transaction gameId", transaction.logs[0].topics[1]);
+
+				// get the gameId emitted from the transaction
+				// using the event GameCreated(uint256 indexed gameId);
+				const rawGameId = transaction.logs[0].topics[1];
+				const bigIntGameId = BigInt(rawGameId as string);
+				const contractGameId = Number(bigIntGameId);   // As number: 291 (if within safe range)
+				console.log("contractGameId: ", contractGameId);
+
+				// create game data object
+				const gameData = {
+					player1Address,
+					player2Address,
+					gameId,
+					contractGameId
+				}
+				console.log("gameData", JSON.stringify(gameData));
+
 				await stub.setInitialPlayerData(gameData);
 				let player1Games = await env.KV_CHESS_GAMES_BY_USER.get(player1Address);
 				let player2Games = await env.KV_CHESS_GAMES_BY_USER.get(player2Address);
@@ -519,11 +584,11 @@ export default {
 				await env.KV_CHESS_GAMES_BY_USER.put(player1Address, player1Games);
 				await env.KV_CHESS_GAMES_BY_USER.put(player2Address, player2Games);
 
-				const result = await env.D1_GAMES.prepare("INSERT INTO games (DurableObjectId, DisplayGameId, Player1Address, Player2Address) VALUES (?, ?, ?, ?)")
-					.bind(id.toString(), gameId, player1Address, player2Address)
+				// save the gameId to the databases
+				const result = await env.D1_GAMES.prepare("INSERT INTO games (ContractGameId, DurableObjectId, DisplayGameId, Player1Address, Player2Address) VALUES (?, ?, ?, ?, ?)")
+					.bind(contractGameId, id.toString(), gameId, player1Address, player2Address)
 					.run();
 				console.log("result", JSON.stringify(result));
-
 
 				// response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") || '*');
 				return setCors(new Response(JSON.stringify({ gameId })));

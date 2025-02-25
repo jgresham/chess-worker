@@ -14,7 +14,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250121.0",
     "typescript": "^5.5.2",
-    "wrangler": "^3.109.2"
+    "wrangler": "^3.109.3"
   },
   "dependencies": {
     "@wagmi/core": "^2.16.4",
