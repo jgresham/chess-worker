@@ -2,6 +2,8 @@
 
 interface Env {
 	ENVIRONMENT: "staging" | "production";
-	CHAIN_ID: "8453" | "84532";
+	CHAIN_ID: "84532" | "8453";
 	BASE_TRANSPORT_URL: string;
+	WALLET_PRIVATE_KEY: string;
+	VERIFY_GAME_UPDATE_KEY: string;
 }

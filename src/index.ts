@@ -5,6 +5,7 @@ import { config } from "./wagmiconfig";
 import { generateId } from "./generateId";
 import { createClients } from "./viemClients";
 import { contracts } from "./contracts";
+import { verifyGameUpdate } from "./verifyGameUpdate";
 
 export type WsMessage = {
 	type: string,
@@ -609,7 +610,29 @@ export default {
 			return new Response(object.body, {
 				headers,
 			});
+		} else if (request.url.match("/verifyGameUpdate")) {
+			console.log("match /verifyGameUpdate")
+			if (request.headers.get('X-API-Key') !== env.VERIFY_GAME_UPDATE_KEY) {
+				return new Response(null, {
+					status: 401,
+					statusText: "Unauthorized",
+				});
+			}
+			if (request.method == 'POST') {
+				console.log("POST /verifyGameUpdate")
+				const body: {
+					contractGameId: number,
+					signer: `0x${string}`,
+					message: string,
+					signature: `0x${string}`,
+				} = await request.json();
+				console.log("body", body);
+
+				return await verifyGameUpdate(env, body);
+			}
 		}
+
+
 		console.log("Router handler not found for request: ", request.url);
 		return new Response("sah dude", {
 			status: 200,
