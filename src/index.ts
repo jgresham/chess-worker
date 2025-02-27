@@ -625,13 +625,13 @@ export default {
 					signer: `0x${string}`,
 					message: string,
 					signature: `0x${string}`,
+					updateIndex: number
 				} = await request.json();
 				console.log("body", body);
 
-				return await verifyGameUpdate(env, body);
+				return await verifyGameUpdate({ env, gameUpdate: body });
 			}
 		}
-
 
 		console.log("Router handler not found for request: ", request.url);
 		return new Response("sah dude", {
