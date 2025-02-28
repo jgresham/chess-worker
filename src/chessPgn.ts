@@ -5,7 +5,9 @@ export function parseHeaders(pgnString: string): Record<string, string> {
 	const headers: Record<string, string> = {};
 	const lines = pgnString.split('\n');
 
-	for (const line of lines) {
+	console.log("lines", lines);
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
 		const match = line.match(/^\[(\w+)\s+"([^"]*)"\]$/);
 		if (match) {
 			const [, key, value] = match;
@@ -27,6 +29,8 @@ export const isChessPgnValidForCurrentPgn = (prevPgn: string, currentPgn: string
 	if (currentPgn === prevPgn) {
 		return true;
 	}
+	console.log("prevPgn", prevPgn);
+	console.log("currentPgn", currentPgn);
 
 	// todo: compare pgn headers
 	const prevHeaders = parseHeaders(prevPgn);

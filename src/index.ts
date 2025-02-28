@@ -499,6 +499,12 @@ export default {
 						},
 					});
 				}
+				if (player1Address === player2Address) {
+					return new Response(null, {
+						status: 400,
+						statusText: `Player addresses cannot be the same. Player1: ${player1Address}, Player2: ${player2Address}`,
+					});
+				}
 				const gameId = generateId();
 
 				const id = env.CHESS_GAME.idFromName(gameId);
@@ -586,8 +592,8 @@ export default {
 				await env.KV_CHESS_GAMES_BY_USER.put(player2Address, player2Games);
 
 				// save the gameId to the databases
-				const result = await env.D1_GAMES.prepare("INSERT INTO games (ContractGameId, DurableObjectId, DisplayGameId, Player1Address, Player2Address) VALUES (?, ?, ?, ?, ?)")
-					.bind(contractGameId, id.toString(), gameId, player1Address, player2Address)
+				const result = await env.D1_GAMES.prepare("INSERT INTO games (ContractGameId, DurableObjectId, DisplayGameId, Player1Address, Player2Address, ContractAddress) VALUES (?, ?, ?, ?, ?, ?)")
+					.bind(contractGameId, id.toString(), gameId, player1Address, player2Address, contracts.gamesContract[env.CHAIN_ID].address)
 					.run();
 				console.log("result", JSON.stringify(result));
 
