@@ -6,6 +6,7 @@ import { generateId } from "./generateId";
 import { createClients } from "./viemClients";
 import { contracts } from "./contracts";
 import { verifyGameUpdate } from "./verifyGameUpdate";
+import { handleGameOverNft } from "./handleGameOverNft";
 
 export type WsMessage = {
 	type: string,
@@ -479,6 +480,25 @@ export default {
 				});
 				console.log("gameData", JSON.stringify(gameData));
 				return setCors(new Response(JSON.stringify({ games: gameData })));
+			}
+		} else if (request.url.match("/gameOverNft")) {
+			console.log("match /gameOverNft")
+			if (request.method == 'POST') {
+				if (request.headers.get('X-API-Key') !== env.VERIFY_GAME_UPDATE_KEY) {
+					return new Response(null, {
+						status: 401,
+						statusText: "Unauthorized",
+					});
+				}
+				console.log("POST /gameOverNft")
+				const body: {
+					contractAddress: `0x${string}`,
+					contractGameId: number,
+					metadataUrl: string
+				} = await request.json();
+				console.log("body", body);
+
+				return await handleGameOverNft({ env, ...body });
 			}
 		} else if (request.url.match("/game")) {
 			console.log("match /game")
