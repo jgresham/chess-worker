@@ -19,7 +19,7 @@ export const contracts: Record<string, {
 	gamesContract: {
 		// base
 		[8453]: {
-			address: "0xa10b8A70bf736E29a69e7E8a45123b5170183076",
+			address: "0xe8f2d76cf6972eed0F8717B1339706c11fBa9a08",
 			abi: gamesContractAbi as Abi
 		},
 		// base sepolia
@@ -31,7 +31,7 @@ export const contracts: Record<string, {
 	nftContract: {
 		// base
 		[8453]: {
-			address: "0xa10b8A70bf736E29a69e7E8a45123b5170183076",
+			address: "0xc43383b7265ebC4DB56df41b8D88289Ec87d1621",
 			abi: nftContractAbi as Abi
 		},
 		// base sepolia

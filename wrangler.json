@@ -9,6 +9,7 @@
   "compatibility_date": "2025-01-09",
 	"env": {
     "staging": {
+			"name": "chess-worker-staging",
       "vars": {
         "ENVIRONMENT": "staging",
 				"CHAIN_ID": "84532"
@@ -50,6 +51,7 @@
 			]
     },
     "production": {
+			"name": "chess-worker",
       "vars": {
         "ENVIRONMENT": "production",
 				"CHAIN_ID": "8453"
