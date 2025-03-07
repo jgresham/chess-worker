@@ -6,10 +6,10 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "cf-typegen": "wrangler types",
+    "cf-typegen": "wrangler types -e production",
     "list-kv-namespaces": "npx wrangler kv key list --binding=KV_CHESS_GAMES_BY_USER --config wrangler.json",
     "get-games-by-user": "npx wrangler kv key get --binding=KV_CHESS_GAMES_BY_USER --text ",
-		"get-kv-users-prod": "npx wrangler kv key list --namespace-id ebe20f1ab11c48bea8c63c20c017dc09",
+    "get-kv-users-prod": "npx wrangler kv key list --namespace-id ebe20f1ab11c48bea8c63c20c017dc09",
     "execute-schema-staging": "npx wrangler d1 execute staging-d1-games --remote --file=./schema.sql --env staging",
     "execute-schema-prod": "npx wrangler d1 execute prod-d1-games --remote --file=./schema.sql",
     "show-all-games-staging": "npx wrangler d1 execute staging-d1-games --command 'Select * from Games;' --remote",
@@ -18,11 +18,15 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",
     "typescript": "^5.5.2",
-    "wrangler": "^3.111.0"
+    "wrangler": "^3.114.0"
   },
   "dependencies": {
     "@wagmi/core": "^2.16.5",
     "chess.js": "^1.1.0",
     "viem": "^2.23.5"
-  }
+  },
+	"workspaces": [
+    ".",
+    "based-chess"
+  ]
 }

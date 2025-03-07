@@ -13,6 +13,20 @@ export type WsMessage = {
 	data: any
 }
 
+export type UserFacingGameData = {
+	player1Address: `0x${string}` | undefined,
+	player2Address: `0x${string}` | undefined,
+	gameId: string | undefined,
+	liveViewers: number | undefined,
+	latestPlayer1Signature: `0x${string}` | undefined,
+	latestPlayer1Message: string | undefined,
+	latestPlayer2Signature: `0x${string}` | undefined,
+	latestPlayer2Message: string | undefined,
+	createdTimestamp: number | undefined,
+	contractGameId: number | undefined,
+	pgn: string | undefined,
+}
+
 /**
  * Welcome to Cloudflare Workers! This is your first Durable Objects application.
  *
@@ -113,7 +127,7 @@ export class ChessGame extends DurableObject<Env> {
 		return await this.ctx.storage.get('gameId');
 	}
 
-	async getUserFacingGameData(): Promise<{
+	public async getUserFacingGameData(): Promise<{
 		player1Address: `0x${string}` | undefined,
 		player2Address: `0x${string}` | undefined,
 		gameId: string | undefined,
@@ -124,6 +138,7 @@ export class ChessGame extends DurableObject<Env> {
 		latestPlayer2Message: string | undefined,
 		createdTimestamp: number | undefined,
 		contractGameId: number | undefined,
+		pgn: string | undefined,
 	}> {
 		const player1Address = await this.ctx.storage.get('player1Address') as `0x${string}` | undefined;
 		const player2Address = await this.ctx.storage.get('player2Address') as `0x${string}` | undefined;
@@ -137,6 +152,7 @@ export class ChessGame extends DurableObject<Env> {
 		const latestPlayer2Message = await this.ctx.storage.get('latestPlayer2Message') as string | undefined;
 		const createdTimestamp = await this.ctx.storage.get('createdTimestamp') as number | undefined;
 		const contractGameId = await this.ctx.storage.get('contractGameId') as number | undefined;
+		const pgn = await this.ctx.storage.get('gamePgn') as string | undefined;
 		return {
 			player1Address,
 			player2Address,
@@ -147,7 +163,8 @@ export class ChessGame extends DurableObject<Env> {
 			latestPlayer2Signature,
 			latestPlayer2Message,
 			createdTimestamp,
-			contractGameId
+			contractGameId,
+			pgn
 		}
 	}
 
