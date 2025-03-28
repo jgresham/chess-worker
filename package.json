@@ -18,14 +18,14 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",
     "typescript": "^5.5.2",
-    "wrangler": "^3.114.0"
+    "wrangler": "^4.5.1"
   },
   "dependencies": {
     "@wagmi/core": "^2.16.5",
     "chess.js": "^1.1.0",
     "viem": "^2.23.5"
   },
-	"workspaces": [
+  "workspaces": [
     ".",
     "based-chess"
   ]

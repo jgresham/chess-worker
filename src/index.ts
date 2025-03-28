@@ -396,7 +396,7 @@ async function handleOptions(request: Request<unknown, CfProperties<unknown>>) {
 		// Handle standard OPTIONS request.
 		return new Response(null, {
 			headers: {
-				Allow: "GET, HEAD, POST, OPTIONS",
+				Allow: "GET, HEAD, POST, PUT, DELETE, OPTIONS",
 			},
 		});
 	}
@@ -528,19 +528,20 @@ export default {
 				const player1Address = body.player1Address;
 				const player2Address = body.player2Address;
 				if (!player1Address || !player2Address) {
-					return new Response(null, {
+					console.error(`Player addresses not found. Player1: ${player1Address}, Player2: ${player2Address}`);
+					return new Response(JSON.stringify({ error: `Player addresses not found. Player1: ${player1Address}, Player2: ${player2Address}` }), {
 						status: 400,
-						statusText: `Player addresses not found. Player1: ${player1Address}, Player2: ${player2Address}`,
 						headers: {
 							"Content-Type": "text/plain",
 						},
+
 					});
 				}
 				if (player1Address === player2Address) {
-					return new Response(null, {
+					return setCors(new Response(null, {
 						status: 400,
 						statusText: `Player addresses cannot be the same. Player1: ${player1Address}, Player2: ${player2Address}`,
-					});
+					}));
 				}
 				const gameId = generateId();
 
@@ -551,13 +552,13 @@ export default {
 				// gameIds are generated using generateId() which is a random 6 character string
 				const userFacingGameId = await stub.getUserFacingGameId();
 				if (userFacingGameId) {
-					return new Response(null, {
+					return setCors(new Response(null, {
 						status: 409,
 						statusText: `Game ${gameId} already exists. Rare collision error. Try again.`,
 						headers: {
 							"Content-Type": "text/plain",
 						},
-					});
+					}));
 				}
 
 				// Create a new game on the smart contract then save the gameId to the database
@@ -581,10 +582,10 @@ export default {
 				const { account, publicClient, walletClient } = createClients(env);
 				if (!env.WALLET_PRIVATE_KEY) {
 					console.error("WALLET_PRIVATE_KEY not found");
-					return new Response(null, {
+					return setCors(new Response(null, {
 						status: 500,
 						statusText: "Internal Server Error",
-					});
+					}));
 				}
 
 				const { request: createGameRequest } = await publicClient.simulateContract({
@@ -634,8 +635,12 @@ export default {
 					.run();
 				console.log("result", JSON.stringify(result));
 
-				// response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin") || '*');
-				return setCors(new Response(JSON.stringify({ gameId })));
+				// Apply CORS headers to the response
+				return setCors(new Response(JSON.stringify({ gameId }), {
+					headers: {
+						"Content-Type": "application/json"
+					}
+				}));
 			}
 		} else if (request.url.match("/image")) {
 			// Define an SVG
@@ -677,13 +682,13 @@ export default {
 		}
 
 		console.log("Router handler not found for request: ", request.url);
-		return new Response("sah dude", {
+		return setCors(new Response("sah dude", {
 			status: 200,
 			statusText: "OK",
 			headers: {
 				"Content-Type": "text/plain",
 			},
-		});
+		}));
 		// return new Response(null, {
 		// 	status: 400,
 		// 	statusText: "Bad Request",
