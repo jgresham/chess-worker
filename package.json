@@ -16,14 +16,15 @@
     "show-all-games-prod": "npx wrangler d1 execute prod-d1-games --command 'Select * from Games;' --remote"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250327.0",
+    "@cloudflare/workers-types": "^4.20250401.0",
     "typescript": "^5.8.2",
     "wrangler": "^4.6.0"
   },
   "dependencies": {
+    "@neynar/nodejs-sdk": "^2.23.0",
     "@wagmi/core": "^2.16.7",
     "chess.js": "^1.1.0",
-    "viem": "^2.24.2"
+    "viem": "^2.24.3"
   },
   "workspaces": [
     ".",

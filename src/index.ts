@@ -7,6 +7,7 @@ import { createClients } from "./viemClients";
 import { contracts } from "./contracts";
 import { verifyGameUpdate } from "./verifyGameUpdate";
 import { handleGameOverNft } from "./handleGameOverNft";
+import { sendFarcasterNotification } from "./neynar";
 
 export type WsMessage = {
 	type: string,
@@ -635,6 +636,12 @@ export default {
 					.run();
 				console.log("result", JSON.stringify(result));
 
+				// send notification to player2 if they are on farcaster
+				try {
+					await sendFarcasterNotification({ env, player1Address, player2Address, gameId });
+				} catch (error) {
+					console.error("Error sending farcaster notification:", JSON.stringify(error));
+				}
 				// Apply CORS headers to the response
 				return setCors(new Response(JSON.stringify({ gameId }), {
 					headers: {

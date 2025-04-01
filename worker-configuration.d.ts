@@ -7,6 +7,7 @@ interface Env {
 	BASE_TRANSPORT_URL: string;
 	WALLET_PRIVATE_KEY: string;
 	VERIFY_GAME_UPDATE_KEY: string;
+	NEYNAR_API_KEY: string;
 	CHESS_GAME: DurableObjectNamespace<import("./src/index").ChessGame>;
 	BUCKET_BASEDCHESS_BOARDS: R2Bucket;
 	D1_GAMES: D1Database;
