@@ -7,7 +7,7 @@ import { createClients } from "./viemClients";
 import { contracts } from "./contracts";
 import { verifyGameUpdate } from "./verifyGameUpdate";
 import { handleGameOverNft } from "./handleGameOverNft";
-import { sendFarcasterNotification } from "./neynar";
+import { FarcasterUser, getFarcasterUsersByAddresses, sendFarcasterNotification } from "./neynar";
 
 export type WsMessage = {
 	type: string,
@@ -488,8 +488,25 @@ export default {
 					if (!userFacingGameData || !userFacingGameData.gameId || !userFacingGameData.player1Address || !userFacingGameData.player2Address) {
 						console.error("userFacingGameData not found for gameId: ", gameId);
 					}
-					return { ...userFacingGameData };
+					// Define the type for game data that could include FarcasterUser fields
+					return { ...userFacingGameData } as typeof userFacingGameData & { player1FarcasterData?: FarcasterUser, player2FarcasterData?: FarcasterUser };
 				}));
+				// get player farcaster data for all unique players in the games (there could be duplicate player addresses in the games)
+				const playerAddresses = [...new Set(gameData.map((game) => [game.player1Address, game.player2Address]).flat())];
+				const playerFarcasterData = await getFarcasterUsersByAddresses(playerAddresses as string[], env);
+				console.log("playerFarcasterData", playerFarcasterData);
+
+				// add player farcaster data to gameData
+				gameData = gameData.map((game) => {
+					if (game.player1Address && playerFarcasterData[game.player1Address]?.length > 0) {
+						game.player1FarcasterData = playerFarcasterData[game.player1Address][0];
+					}
+					if (game.player2Address && playerFarcasterData[game.player2Address]?.length > 0) {
+						game.player2FarcasterData = playerFarcasterData[game.player2Address][0];
+					}
+					return game;
+				});
+
 				// put newest games first (todo: remove as games are stored newest first by default)
 				gameData = gameData.sort((a, b) => {
 					const aCreatedTimestamp = a.createdTimestamp || 0;
