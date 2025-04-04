@@ -8,6 +8,8 @@ import { contracts } from "./contracts";
 import { verifyGameUpdate } from "./verifyGameUpdate";
 import { handleGameOverNft } from "./handleGameOverNft";
 import { FarcasterUser, getFarcasterUsersByAddresses, sendFarcasterNotification } from "./neynar";
+import { getAddress as getAddressEip55 } from 'viem'
+
 
 export type WsMessage = {
 	type: string,
@@ -479,9 +481,9 @@ export default {
 						},
 					});
 				}
-				const games = await env.KV_CHESS_GAMES_BY_USER.get(address);
-				console.log("games", games);
+				let games = await env.KV_CHESS_GAMES_BY_USER.get(address);
 				const gameIds = games ? games.split(",") : [];
+				console.log("gameIds", gameIds);
 				let gameData = await Promise.all(gameIds.map(async (gameId) => {
 					const stub = env.CHESS_GAME.get(env.CHESS_GAME.idFromName(gameId));
 					const userFacingGameData = await stub.getUserFacingGameData();
@@ -492,17 +494,22 @@ export default {
 					return { ...userFacingGameData } as typeof userFacingGameData & { player1FarcasterData?: FarcasterUser, player2FarcasterData?: FarcasterUser };
 				}));
 				// get player farcaster data for all unique players in the games (there could be duplicate player addresses in the games)
-				const playerAddresses = [...new Set(gameData.map((game) => [game.player1Address, game.player2Address]).flat())];
-				const playerFarcasterData = await getFarcasterUsersByAddresses(playerAddresses as string[], env);
-				console.log("playerFarcasterData", playerFarcasterData);
+				const uniquePlayerAddresses = new Set<string>();
+				gameData.forEach((game) => {
+					if (game.player1Address) uniquePlayerAddresses.add(game.player1Address.toLowerCase());
+					if (game.player2Address) uniquePlayerAddresses.add(game.player2Address.toLowerCase());
+				});
+				const playerAddresses = Array.from(uniquePlayerAddresses);
+				const playerFarcasterData = await getFarcasterUsersByAddresses(playerAddresses, env);
+				console.log("playerFarcasterData", JSON.stringify(playerFarcasterData));
 
 				// add player farcaster data to gameData
 				gameData = gameData.map((game) => {
-					if (game.player1Address && playerFarcasterData[game.player1Address]?.length > 0) {
-						game.player1FarcasterData = playerFarcasterData[game.player1Address][0];
+					if (game.player1Address && playerFarcasterData[game.player1Address.toLowerCase()]?.length > 0) {
+						game.player1FarcasterData = playerFarcasterData[game.player1Address.toLowerCase()][0];
 					}
-					if (game.player2Address && playerFarcasterData[game.player2Address]?.length > 0) {
-						game.player2FarcasterData = playerFarcasterData[game.player2Address][0];
+					if (game.player2Address && playerFarcasterData[game.player2Address.toLowerCase()]?.length > 0) {
+						game.player2FarcasterData = playerFarcasterData[game.player2Address.toLowerCase()][0];
 					}
 					return game;
 				});
@@ -543,8 +550,8 @@ export default {
 					player1Address: `0x${string}`,
 					player2Address: `0x${string}`,
 				} = await request.json();
-				const player1Address = body.player1Address;
-				const player2Address = body.player2Address;
+				let player1Address = body.player1Address;
+				let player2Address = body.player2Address;
 				if (!player1Address || !player2Address) {
 					console.error(`Player addresses not found. Player1: ${player1Address}, Player2: ${player2Address}`);
 					return new Response(JSON.stringify({ error: `Player addresses not found. Player1: ${player1Address}, Player2: ${player2Address}` }), {
@@ -555,6 +562,9 @@ export default {
 
 					});
 				}
+				// ensure player addresses are mixed case (checksummed eip-55)
+				player1Address = getAddressEip55(player1Address);
+				player2Address = getAddressEip55(player2Address);
 				if (player1Address === player2Address) {
 					return setCors(new Response(null, {
 						status: 400,
